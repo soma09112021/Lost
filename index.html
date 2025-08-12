@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>幼児向け 迷路ゲーム</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">めいろ</div>
+      <div class="coins" id="coinDisplay">🪙 0</div>
+    </header>
+
+    <main id="screenRoot">
+      <!-- Selection Screen -->
+      <section id="screenSelect" class="screen active">
+        <h1 class="title">めいろであそぼう</h1>
+        <div class="card">
+          <h2>ねんれいをえらぶ</h2>
+          <div class="age-grid" id="ageGrid">
+            <button class="chip" data-age="3">3さい</button>
+            <button class="chip" data-age="4">4さい</button>
+            <button class="chip" data-age="5">5さい</button>
+            <button class="chip" data-age="6">6さい</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>テーマ</h2>
+          <div class="theme-grid" id="themeGrid">
+            <button class="chip" data-theme="animals">どうぶつ 🐶</button>
+            <button class="chip" data-theme="vehicles">のりもの 🚗</button>
+          </div>
+        </div>
+        <button id="startBtn" class="cta" disabled>スタート</button>
+      </section>
+
+      <!-- Game Screen -->
+      <section id="screenGame" class="screen">
+        <div class="hud">
+          <button id="backBtn" class="ghost">← もどる</button>
+          <div class="levelTag" id="levelTag"></div>
+        </div>
+        <div class="canvasWrap">
+          <canvas id="gameCanvas" width="800" height="800"></canvas>
+        </div>
+        <div class="help">キャラクターをドラッグしてゴールへ！</div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+  </html>
+
