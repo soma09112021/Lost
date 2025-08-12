@@ -70,13 +70,14 @@ function switchScreen(which) {
 
 // Game implementation
 let maze, vis, metrics;
-let player = { cellX: 0, cellY: 0, x: 0, y: 0, targetX: 0, targetY: 0, radius: 16, themeIcon: '🐶', moving: false, hurtFlash: 0 };
+let player = { cellX: 0, cellY: 0, x: 0, y: 0, radius: 16, themeIcon: '🐶', hurtFlash: 0 };
 let dragging = false;
 let lastTouch = null;
 let rafId = 0;
 let inputSetup = false;
-let queuedDir = null; // 0 up,1 right,2 down,3 left
 let lastHurtAt = 0;
+let running = false;
+let won = false;
 
 function startGame() {
   switchScreen('game');
@@ -90,12 +91,14 @@ function startGame() {
   metrics = drawMaze(ctx, maze, { w: els.canvas.width, h: els.canvas.height });
   player.cellX = maze.start.x; player.cellY = maze.start.y;
   const [px, py] = cellCenter(player.cellX, player.cellY);
-  player.x = player.targetX = px; player.y = player.targetY = py;
-  player.radius = Math.max(10, Math.floor(metrics.cellSize * 0.28));
+  player.x = px; player.y = py;
+  player.radius = Math.max(10, Math.floor(metrics.cellSize * 0.24));
   player.themeIcon = store.theme === 'vehicles' ? '🚗' : '🐶';
+  won = false;
   els.levelTag.textContent = `${store.age}さい・${maze.cols}×${maze.rows}`;
   drawAll();
   setupInput();
+  startLoop();
 }
 
 function difficultyForAge(age) {
@@ -151,73 +154,69 @@ function onMove(evt) {
   evt.preventDefault();
   const { x, y } = canvasPoint(evt);
   lastTouch = { x, y };
-  tryStepToward(x, y);
 }
 function onEnd() { dragging = false; lastTouch = null; }
 
-function tryStepToward(x, y) {
-  const dx = x - player.x; const dy = y - player.y;
-  const absX = Math.abs(dx), absY = Math.abs(dy);
-  let dir = null;
-  if (absX > absY) dir = dx > 0 ? 1 : 3; else dir = dy > 0 ? 2 : 0;
-
-  if (player.moving) {
-    // queue the next direction while moving for continuous feel
-    if (maze.canMove(player.cellX, player.cellY, dir)) {
-      queuedDir = dir;
-    } else {
-      maybeHurt();
+function startLoop() {
+  if (running) return; running = true;
+  const tick = () => {
+    if (!running) return;
+    const speed = Math.max(3, Math.floor(metrics.cellSize * 0.32));
+    if (dragging && lastTouch) {
+      const vx = lastTouch.x - player.x;
+      const vy = lastTouch.y - player.y;
+      const dist = Math.hypot(vx, vy);
+      if (dist > 0.5) {
+        const step = Math.min(speed, dist);
+        const dx = (vx / dist) * step;
+        const dy = (vy / dist) * step;
+        const res = attemptMove(player.x, player.y, dx, dy);
+        player.x = res.x; player.y = res.y;
+      }
     }
-    return;
-  }
-
-  if (!maze.canMove(player.cellX, player.cellY, dir)) { maybeHurt(); return; }
-  const nx = player.cellX + (dir === 1 ? 1 : dir === 3 ? -1 : 0);
-  const ny = player.cellY + (dir === 2 ? 1 : dir === 0 ? -1 : 0);
-  const [tx, ty] = cellCenter(nx, ny);
-  player.cellX = nx; player.cellY = ny;
-  player.targetX = tx; player.targetY = ty; player.moving = true;
-  animate();
+    // Update cell from position
+    const c = cellFromPoint(player.x, player.y);
+    if (c) { player.cellX = c.x; player.cellY = c.y; }
+    drawAll();
+    if (!won && player.cellX === maze.goal.x && player.cellY === maze.goal.y) {
+      won = true; onGoal();
+    }
+    rafId = requestAnimationFrame(tick);
+  };
+  rafId = requestAnimationFrame(tick);
 }
 
-function animate() {
-  cancelAnimationFrame(rafId);
-  const speed = Math.max(4, Math.floor(metrics.cellSize * 0.24));
-  const step = () => {
-    const vx = player.targetX - player.x;
-    const vy = player.targetY - player.y;
-    const dist = Math.hypot(vx, vy);
-    if (dist <= speed) {
-      player.x = player.targetX; player.y = player.targetY; player.moving = false;
-      drawAll();
-      if (player.cellX === maze.goal.x && player.cellY === maze.goal.y) onGoal();
-      // chain movement if dragging and a direction is queued
-      if (!player.moving && (queuedDir !== null || (dragging && lastTouch))) {
-        let dir = queuedDir;
-        if (dir === null && dragging && lastTouch) {
-          const dx2 = lastTouch.x - player.x; const dy2 = lastTouch.y - player.y;
-          dir = Math.abs(dx2) > Math.abs(dy2) ? (dx2 > 0 ? 1 : 3) : (dy2 > 0 ? 2 : 0);
-        }
-        queuedDir = null;
-        if (dir !== null && maze.canMove(player.cellX, player.cellY, dir)) {
-          const nx = player.cellX + (dir === 1 ? 1 : dir === 3 ? -1 : 0);
-          const ny = player.cellY + (dir === 2 ? 1 : dir === 0 ? -1 : 0);
-          const [tx, ty] = cellCenter(nx, ny);
-          player.cellX = nx; player.cellY = ny;
-          player.targetX = tx; player.targetY = ty; player.moving = true;
-          rafId = requestAnimationFrame(step);
-          return;
-        }
-      }
-      return;
-    }
-    const nx = player.x + (vx / dist) * speed;
-    const ny = player.y + (vy / dist) * speed;
-    player.x = nx; player.y = ny;
-    drawAll();
-    rafId = requestAnimationFrame(step);
-  };
-  rafId = requestAnimationFrame(step);
+function attemptMove(cx, cy, dx, dy) {
+  // try full move
+  let nx = cx + dx, ny = cy + dy;
+  if (canTraverse(cx, cy, nx, ny)) return { x: nx, y: ny };
+  // try slide on X axis
+  nx = cx + dx; ny = cy;
+  if (canTraverse(cx, cy, nx, ny)) return { x: nx, y: ny };
+  // try slide on Y axis
+  nx = cx; ny = cy + dy;
+  if (canTraverse(cx, cy, nx, ny)) return { x: nx, y: ny };
+  maybeHurt();
+  return { x: cx, y: cy };
+}
+
+function canTraverse(x1, y1, x2, y2) {
+  const a = cellFromPoint(x1, y1);
+  const b = cellFromPoint(x2, y2);
+  if (!a || !b) return false;
+  if (a.x === b.x && a.y === b.y) return true;
+  const dx = b.x - a.x; const dy = b.y - a.y;
+  if (Math.abs(dx) + Math.abs(dy) !== 1) return false; // skip diagonal/multi jumps
+  const dir = dx === 1 ? 1 : dx === -1 ? 3 : dy === 1 ? 2 : 0;
+  return maze.canMove(a.x, a.y, dir);
+}
+
+function cellFromPoint(px, py) {
+  const { originX, originY, cellSize } = metrics;
+  const x = Math.floor((px - originX) / cellSize);
+  const y = Math.floor((py - originY) / cellSize);
+  if (x < 0 || y < 0 || x >= maze.cols || y >= maze.rows) return null;
+  return { x, y };
 }
 
 function drawAll() {
